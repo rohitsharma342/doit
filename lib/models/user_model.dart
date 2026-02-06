@@ -5,8 +5,7 @@ class UserModel {
   final String name;
   final String email;
   final UserRole role;
-  final String? companyName;
-  final String? profileImageUrl;
+  final String? profileImage;
   final DateTime createdAt;
 
   UserModel({
@@ -14,23 +13,18 @@ class UserModel {
     required this.name,
     required this.email,
     required this.role,
-    this.companyName,
-    this.profileImageUrl,
+    this.profileImage,
     required this.createdAt,
   });
 
-  bool get isStartup => role == UserRole.startup;
-  bool get isOfficial => role == UserRole.official;
-
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      email: json['email'] ?? '',
+      id: json['id'] as String,
+      name: json['name'] as String,
+      email: json['email'] as String,
       role: json['role'] == 'official' ? UserRole.official : UserRole.startup,
-      companyName: json['companyName'],
-      profileImageUrl: json['profileImageUrl'],
-      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
+      profileImage: json['profileImage'] as String?,
+      createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }
 
@@ -40,9 +34,11 @@ class UserModel {
       'name': name,
       'email': email,
       'role': role == UserRole.official ? 'official' : 'startup',
-      'companyName': companyName,
-      'profileImageUrl': profileImageUrl,
+      'profileImage': profileImage,
       'createdAt': createdAt.toIso8601String(),
     };
   }
+
+  bool get isOfficial => role == UserRole.official;
+  bool get isStartup => role == UserRole.startup;
 }

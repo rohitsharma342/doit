@@ -1,90 +1,84 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../app/routes.dart';
-import '../config/theme.dart';
-import '../controllers/notification_controller.dart';
-import '../utils/constants.dart';
+import '../config/app_colors.dart';
+import '../config/app_routes.dart';
+import '../providers/notification_provider.dart';
+import '../providers/proposal_provider.dart';
 import '../widgets/notification_item.dart';
-import '../widgets/loading_indicator.dart';
 
-class NotificationsScreen extends StatefulWidget {
+class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
 
   @override
-  State<NotificationsScreen> createState() => _NotificationsScreenState();
-}
-
-class _NotificationsScreenState extends State<NotificationsScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<NotificationController>().loadNotifications();
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final notifications = context.watch<NotificationProvider>();
+    final proposals = context.read<ProposalProvider>();
+
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
-        title: const Text(AppStrings.notifications),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios),
-          onPressed: () => context.pop(),
+          onPressed: () => Navigator.pop(context),
         ),
+        title: const Text('Notifications'),
         actions: [
-          Consumer<NotificationController>(
-            builder: (context, controller, child) {
-              if (controller.unreadCount > 0) {
-                return TextButton(
-                  onPressed: () => controller.markAllAsRead(),
-                  child: const Text('Mark all read'),
-                );
-              }
-              return const SizedBox.shrink();
-            },
-          ),
+          if (notifications.unreadCount > 0)
+            TextButton(
+              onPressed: () => notifications.markAllAsRead(),
+              child: const Text('Mark all read'),
+            ),
         ],
       ),
-      body: Consumer<NotificationController>(
-        builder: (context, controller, child) {
-          if (controller.isLoading) {
-            return const LoadingIndicator(message: 'Loading notifications...');
-          }
-
-          if (controller.notifications.isEmpty) {
-            return const EmptyState(
-              icon: Icons.notifications_off_outlined,
-              title: AppStrings.noNotifications,
-              subtitle: 'You will receive notifications about your proposals here.',
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: () => controller.loadNotifications(),
-            color: AppTheme.primaryColor,
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: controller.notifications.length,
+      body: notifications.notifications.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.notifications_off_outlined,
+                    size: 80,
+                    color: AppColors.textLight,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No notifications yet',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "You'll see updates here",
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.textLight,
+                        ),
+                  ),
+                ],
+              ),
+            )
+          : ListView.builder(
+              itemCount: notifications.notifications.length,
               itemBuilder: (context, index) {
-                final notification = controller.notifications[index];
+                final notification = notifications.notifications[index];
                 return NotificationItem(
                   notification: notification,
                   onTap: () {
-                    controller.markAsRead(notification.id);
-                    if (notification.relatedProposalId != null) {
-                      context.push('${AppRoutes.proposalDetail}/${notification.relatedProposalId}');
+                    notifications.markAsRead(notification.id);
+                    if (notification.proposalId != null) {
+                      final proposal =
+                          proposals.getProposalById(notification.proposalId!);
+                      if (proposal != null) {
+                        Navigator.pushNamed(
+                          context,
+                          AppRoutes.proposalDetail,
+                          arguments: proposal,
+                        );
+                      }
                     }
                   },
-                ).animate().fadeIn(delay: Duration(milliseconds: 50 * index)).slideX(begin: 0.1, end: 0);
+                );
               },
             ),
-          );
-        },
-      ),
     );
   }
 }

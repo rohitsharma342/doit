@@ -14,38 +14,14 @@
   <link rel="manifest" href="manifest.json">
   <script>
     var serviceWorkerVersion = null;
-    var scriptLoaded = false;
-    function loadMainDartJs() {
-      if (scriptLoaded) {
-        return;
-      }
-      scriptLoaded = true;
-      var scriptTag = document.createElement('script');
-      scriptTag.src = 'main.dart.js';
-      scriptTag.type = 'application/javascript';
-      document.body.append(scriptTag);
-    }
-
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
-        var serviceWorkerUrl = 'flutter_service_worker.js?v=' + serviceWorkerVersion;
-        navigator.serviceWorker.register(serviceWorkerUrl);
-        navigator.serviceWorker.ready.then(function(reg) {
-          loadMainDartJs();
-        });
-        setTimeout(function () {
-          loadMainDartJs();
-        }, 4000);
-      });
-    } else {
-      loadMainDartJs();
-    }
   </script>
+  <script src="flutter_bootstrap.js" async></script>
   <style>
     body {
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background-color: #f8fafb;
     }
     .loading {
       display: flex;
@@ -53,48 +29,40 @@
       align-items: center;
       height: 100vh;
       flex-direction: column;
-      background-color: #ffffff;
     }
-    .loading-logo {
-      width: 80px;
-      height: 80px;
-      background-color: #04bbc9;
-      border-radius: 20px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin-bottom: 24px;
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #e0e0e0;
+      border-top: 4px solid #04bbc9;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
     }
-    .loading-logo svg {
-      width: 40px;
-      height: 40px;
-      fill: white;
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
     .loading-text {
-      color: #04bbc9;
-      font-size: 24px;
-      font-weight: bold;
-      margin-bottom: 8px;
-    }
-    .loading-subtitle {
-      color: #6B7280;
-      font-size: 14px;
+      margin-top: 20px;
+      color: #2c3e50;
+      font-size: 16px;
     }
   </style>
 </head>
 <body>
   <div class="loading" id="loading">
-    <div class="loading-logo">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12.0001 2.00009C11.7554 1.99766 11.5193 2.09377 11.3481 2.26509L4.34814 9.26509C4.34314 9.27009 4.34314 9.27509 4.33814 9.28009L2.26814 11.3501C2.09314 11.5251 1.99814 11.7601 2.00014 12.0001C2.00214 12.2401 2.09814 12.4751 2.27314 12.6501L4.34314 14.7201C4.34314 14.7251 4.34814 14.7301 4.35314 14.7351L11.3481 21.7351C11.5231 21.9101 11.7581 22.0001 12.0001 22.0001C12.2421 22.0001 12.4771 21.9101 12.6521 21.7351L19.6471 14.7351C19.6521 14.7301 19.6521 14.7251 19.6571 14.7201L21.7271 12.6501C21.9021 12.4751 21.9981 12.2401 22.0001 12.0001C22.0021 11.7601 21.9071 11.5251 21.7321 11.3501L19.6621 9.28009C19.6571 9.27509 19.6571 9.27009 19.6521 9.26509L12.6521 2.26509C12.4811 2.09377 12.2448 1.99766 12.0001 2.00009Z"/>
-      </svg>
-    </div>
-    <div class="loading-text">DOIT Rajasthan</div>
-    <div class="loading-subtitle">Empowering Innovation</div>
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Loading DOIT Rajasthan...</div>
   </div>
   <script>
-    window.addEventListener('flutter-first-frame', function () {
-      document.getElementById('loading').style.display = 'none';
+    window.addEventListener('load', function(ev) {
+      _flutter.loader.load({
+        onEntrypointLoaded: async function(engineInitializer) {
+          let appRunner = await engineInitializer.initializeEngine();
+          await appRunner.runApp();
+          document.getElementById('loading').style.display = 'none';
+        }
+      });
     });
   </script>
 </body>

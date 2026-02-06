@@ -1,68 +1,4 @@
-enum ProposalStatus {
-  pending,
-  underReview,
-  approved,
-  rejected,
-  requiresChanges,
-}
-
-extension ProposalStatusExtension on ProposalStatus {
-  String get displayName {
-    switch (this) {
-      case ProposalStatus.pending:
-        return 'Pending';
-      case ProposalStatus.underReview:
-        return 'Under Review';
-      case ProposalStatus.approved:
-        return 'Approved';
-      case ProposalStatus.rejected:
-        return 'Rejected';
-      case ProposalStatus.requiresChanges:
-        return 'Requires Changes';
-    }
-  }
-
-  String get colorHex {
-    switch (this) {
-      case ProposalStatus.pending:
-        return '#FFA726';
-      case ProposalStatus.underReview:
-        return '#42A5F5';
-      case ProposalStatus.approved:
-        return '#66BB6A';
-      case ProposalStatus.rejected:
-        return '#EF5350';
-      case ProposalStatus.requiresChanges:
-        return '#AB47BC';
-    }
-  }
-}
-
-class ProposalComment {
-  final String id;
-  final String authorId;
-  final String authorName;
-  final String content;
-  final DateTime createdAt;
-
-  ProposalComment({
-    required this.id,
-    required this.authorId,
-    required this.authorName,
-    required this.content,
-    required this.createdAt,
-  });
-
-  factory ProposalComment.fromJson(Map<String, dynamic> json) {
-    return ProposalComment(
-      id: json['id'] ?? '',
-      authorId: json['authorId'] ?? '',
-      authorName: json['authorName'] ?? '',
-      content: json['content'] ?? '',
-      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
-    );
-  }
-}
+enum ProposalStatus { pending, reviewing, approved, rejected }
 
 class ProposalModel {
   final String id;
@@ -70,14 +6,12 @@ class ProposalModel {
   final String startupName;
   final String title;
   final String description;
-  final String contactEmail;
-  final String contactPhone;
-  final ProposalStatus status;
+  final String contactInfo;
   final List<String> attachments;
-  final List<ProposalComment> comments;
-  final DateTime submittedAt;
-  final DateTime? updatedAt;
-  final String? category;
+  final ProposalStatus status;
+  final List<CommentModel> comments;
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
   ProposalModel({
     required this.id,
@@ -85,38 +19,57 @@ class ProposalModel {
     required this.startupName,
     required this.title,
     required this.description,
-    required this.contactEmail,
-    required this.contactPhone,
+    required this.contactInfo,
+    required this.attachments,
     required this.status,
-    this.attachments = const [],
-    this.comments = const [],
-    required this.submittedAt,
-    this.updatedAt,
-    this.category,
+    required this.comments,
+    required this.createdAt,
+    required this.updatedAt,
   });
 
   factory ProposalModel.fromJson(Map<String, dynamic> json) {
     return ProposalModel(
-      id: json['id'] ?? '',
-      startupId: json['startupId'] ?? '',
-      startupName: json['startupName'] ?? '',
-      title: json['title'] ?? '',
-      description: json['description'] ?? '',
-      contactEmail: json['contactEmail'] ?? '',
-      contactPhone: json['contactPhone'] ?? '',
-      status: ProposalStatus.values.firstWhere(
-        (e) => e.name == json['status'],
-        orElse: () => ProposalStatus.pending,
-      ),
+      id: json['id'] as String,
+      startupId: json['startupId'] as String,
+      startupName: json['startupName'] as String,
+      title: json['title'] as String,
+      description: json['description'] as String,
+      contactInfo: json['contactInfo'] as String,
       attachments: List<String>.from(json['attachments'] ?? []),
+      status: _parseStatus(json['status'] as String),
       comments: (json['comments'] as List<dynamic>?)
-              ?.map((c) => ProposalComment.fromJson(c))
+              ?.map((e) => CommentModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      submittedAt: DateTime.parse(json['submittedAt'] ?? DateTime.now().toIso8601String()),
-      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
-      category: json['category'],
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
+  }
+
+  static ProposalStatus _parseStatus(String status) {
+    switch (status) {
+      case 'reviewing':
+        return ProposalStatus.reviewing;
+      case 'approved':
+        return ProposalStatus.approved;
+      case 'rejected':
+        return ProposalStatus.rejected;
+      default:
+        return ProposalStatus.pending;
+    }
+  }
+
+  String get statusString {
+    switch (status) {
+      case ProposalStatus.pending:
+        return 'Pending';
+      case ProposalStatus.reviewing:
+        return 'Under Review';
+      case ProposalStatus.approved:
+        return 'Approved';
+      case ProposalStatus.rejected:
+        return 'Rejected';
+    }
   }
 
   ProposalModel copyWith({
@@ -125,14 +78,12 @@ class ProposalModel {
     String? startupName,
     String? title,
     String? description,
-    String? contactEmail,
-    String? contactPhone,
-    ProposalStatus? status,
+    String? contactInfo,
     List<String>? attachments,
-    List<ProposalComment>? comments,
-    DateTime? submittedAt,
+    ProposalStatus? status,
+    List<CommentModel>? comments,
+    DateTime? createdAt,
     DateTime? updatedAt,
-    String? category,
   }) {
     return ProposalModel(
       id: id ?? this.id,
@@ -140,14 +91,38 @@ class ProposalModel {
       startupName: startupName ?? this.startupName,
       title: title ?? this.title,
       description: description ?? this.description,
-      contactEmail: contactEmail ?? this.contactEmail,
-      contactPhone: contactPhone ?? this.contactPhone,
-      status: status ?? this.status,
+      contactInfo: contactInfo ?? this.contactInfo,
       attachments: attachments ?? this.attachments,
+      status: status ?? this.status,
       comments: comments ?? this.comments,
-      submittedAt: submittedAt ?? this.submittedAt,
+      createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      category: category ?? this.category,
+    );
+  }
+}
+
+class CommentModel {
+  final String id;
+  final String userId;
+  final String userName;
+  final String content;
+  final DateTime createdAt;
+
+  CommentModel({
+    required this.id,
+    required this.userId,
+    required this.userName,
+    required this.content,
+    required this.createdAt,
+  });
+
+  factory CommentModel.fromJson(Map<String, dynamic> json) {
+    return CommentModel(
+      id: json['id'] as String,
+      userId: json['userId'] as String,
+      userName: json['userName'] as String,
+      content: json['content'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }
 }

@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../app/routes.dart';
-import '../config/theme.dart';
-import '../controllers/auth_controller.dart';
-import '../controllers/dashboard_controller.dart';
-import '../controllers/notification_controller.dart';
+import '../config/app_colors.dart';
+import '../config/app_routes.dart';
 import '../models/proposal_model.dart';
-import '../utils/constants.dart';
+import '../providers/auth_provider.dart';
+import '../providers/proposal_provider.dart';
+import '../providers/notification_provider.dart';
 import '../widgets/proposal_card.dart';
-import '../widgets/loading_indicator.dart';
+import '../widgets/custom_text_field.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -19,30 +16,20 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
+class _DashboardScreenState extends State<DashboardScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _searchController = TextEditingController();
-  bool _showFilters = false;
+  ProposalStatus? _selectedStatus;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
-    });
-  }
-
-  void _loadData() {
-    final authController = context.read<AuthController>();
-    final dashboardController = context.read<DashboardController>();
-    final notificationController = context.read<NotificationController>();
-
-    dashboardController.loadProposals(
-      userId: authController.currentUser?.id,
-      isOfficial: authController.isOfficial,
+    final auth = context.read<AuthProvider>();
+    _tabController = TabController(
+      length: auth.isOfficial ? 2 : 1,
+      vsync: this,
     );
-    notificationController.loadNotifications();
   }
 
   @override
@@ -52,385 +39,461 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     super.dispose();
   }
 
-  void _handleLogout() {
-    showDialog(
+  void _showFilterBottomSheet() {
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.read<AuthController>().logout();
-              context.go(AppRoutes.login);
-            },
-            child: const Text('Logout'),
-          ),
-        ],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Filter Proposals',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setModalState(() {
+                            _selectedStatus = null;
+                          });
+                          context.read<ProposalProvider>().clearFilters();
+                          _searchController.clear();
+                        },
+                        child: const Text('Clear All'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Status',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildFilterChip(
+                        'All',
+                        _selectedStatus == null,
+                        () {
+                          setModalState(() => _selectedStatus = null);
+                          context.read<ProposalProvider>().setStatusFilter(null);
+                        },
+                      ),
+                      _buildFilterChip(
+                        'Pending',
+                        _selectedStatus == ProposalStatus.pending,
+                        () {
+                          setModalState(
+                              () => _selectedStatus = ProposalStatus.pending);
+                          context
+                              .read<ProposalProvider>()
+                              .setStatusFilter(ProposalStatus.pending);
+                        },
+                      ),
+                      _buildFilterChip(
+                        'Under Review',
+                        _selectedStatus == ProposalStatus.reviewing,
+                        () {
+                          setModalState(
+                              () => _selectedStatus = ProposalStatus.reviewing);
+                          context
+                              .read<ProposalProvider>()
+                              .setStatusFilter(ProposalStatus.reviewing);
+                        },
+                      ),
+                      _buildFilterChip(
+                        'Approved',
+                        _selectedStatus == ProposalStatus.approved,
+                        () {
+                          setModalState(
+                              () => _selectedStatus = ProposalStatus.approved);
+                          context
+                              .read<ProposalProvider>()
+                              .setStatusFilter(ProposalStatus.approved);
+                        },
+                      ),
+                      _buildFilterChip(
+                        'Rejected',
+                        _selectedStatus == ProposalStatus.rejected,
+                        () {
+                          setModalState(
+                              () => _selectedStatus = ProposalStatus.rejected);
+                          context
+                              .read<ProposalProvider>()
+                              .setStatusFilter(ProposalStatus.rejected);
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Apply Filters'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterChip(String label, bool isSelected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.divider,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : AppColors.textPrimary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showProfileMenu() {
+    final auth = context.read<AuthProvider>();
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 40,
+                backgroundColor: AppColors.primary.withOpacity(0.1),
+                child: Text(
+                  auth.currentUser?.name.substring(0, 1).toUpperCase() ?? 'U',
+                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                        color: AppColors.primary,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                auth.currentUser?.name ?? 'User',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                auth.currentUser?.email ?? '',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  auth.isOfficial ? 'DOIT Official' : 'Startup',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.logout, color: AppColors.error),
+                title: const Text(
+                  'Logout',
+                  style: TextStyle(color: AppColors.error),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  auth.logout();
+                  Navigator.pushReplacementNamed(context, AppRoutes.login);
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final authController = context.watch<AuthController>();
-    final isOfficial = authController.isOfficial;
+    final auth = context.watch<AuthProvider>();
+    final proposals = context.watch<ProposalProvider>();
+    final notifications = context.watch<NotificationProvider>();
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      appBar: _buildAppBar(context, authController),
-      body: Column(
-        children: [
-          _buildSearchAndFilter(context, isOfficial),
-          if (isOfficial) _buildTabs(context),
-          Expanded(
-            child: _buildProposalsList(context, isOfficial),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.rocket_launch_rounded,
+                size: 20,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'DOIT',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                Text(
+                  auth.isOfficial ? 'Official Portal' : 'Startup Portal',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary,
+                        fontSize: 10,
+                      ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined),
+                onPressed: () {
+                  Navigator.pushNamed(context, AppRoutes.notifications);
+                },
+              ),
+              if (notifications.unreadCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: AppColors.error,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '${notifications.unreadCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          GestureDetector(
+            onTap: _showProfileMenu,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: CircleAvatar(
+                radius: 18,
+                backgroundColor: AppColors.primary,
+                child: Text(
+                  auth.currentUser?.name.substring(0, 1).toUpperCase() ?? 'U',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
-      floatingActionButton: !isOfficial
+      body: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.cardShadow,
+                  offset: const Offset(0, 2),
+                  blurRadius: 4,
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: CustomTextField(
+                        hint: 'Search proposals...',
+                        controller: _searchController,
+                        prefixIcon: const Icon(Icons.search),
+                        onChanged: (value) {
+                          proposals.setSearchQuery(value);
+                        },
+                      ),
+                    ),
+                    if (auth.isOfficial) ...[
+                      const SizedBox(width: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.divider),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.tune),
+                          onPressed: _showFilterBottomSheet,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (auth.isOfficial) ...[
+                  const SizedBox(height: 12),
+                  TabBar(
+                    controller: _tabController,
+                    labelColor: AppColors.primary,
+                    unselectedLabelColor: AppColors.textSecondary,
+                    indicatorColor: AppColors.primary,
+                    indicatorSize: TabBarIndicatorSize.label,
+                    tabs: const [
+                      Tab(text: 'All Proposals'),
+                      Tab(text: 'My Reviews'),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Expanded(
+            child: auth.isOfficial
+                ? TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildProposalList(proposals.proposals),
+                      _buildProposalList(proposals.proposals
+                          .where((p) =>
+                              p.status == ProposalStatus.reviewing ||
+                              p.comments.any(
+                                  (c) => c.userId == auth.currentUser?.id))
+                          .toList()),
+                    ],
+                  )
+                : _buildProposalList(
+                    proposals.getProposalsForStartup(auth.currentUser?.id ?? ''),
+                  ),
+          ),
+        ],
+      ),
+      floatingActionButton: auth.isStartup
           ? FloatingActionButton.extended(
-              onPressed: () => context.push(AppRoutes.proposalSubmission),
+              onPressed: () {
+                Navigator.pushNamed(context, AppRoutes.proposalSubmission);
+              },
               icon: const Icon(Icons.add),
               label: const Text('New Proposal'),
-            ).animate().fadeIn(delay: 500.ms).slideY(begin: 1, end: 0)
+            )
           : null,
     );
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context, AuthController authController) {
-    return AppBar(
-      backgroundColor: Colors.white,
-      elevation: 0,
-      title: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppTheme.primaryColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.rocket_launch_rounded,
-              color: Colors.white,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                AppConstants.appName,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              Text(
-                authController.isOfficial ? 'Official Dashboard' : 'Startup Dashboard',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppTheme.textSecondary,
-                    ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      actions: [
-        Consumer<NotificationController>(
-          builder: (context, notifController, child) {
-            return Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications_outlined),
-                  onPressed: () => context.push(AppRoutes.notifications),
-                ),
-                if (notifController.unreadCount > 0)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: AppTheme.errorColor,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        '${notifController.unreadCount}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
-        PopupMenuButton<String>(
-          icon: CircleAvatar(
-            radius: 18,
-            backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-            child: Text(
-              authController.currentUser?.name.substring(0, 1).toUpperCase() ?? 'U',
-              style: const TextStyle(
-                color: AppTheme.primaryColor,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          offset: const Offset(0, 50),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          itemBuilder: (context) => [
-            PopupMenuItem(
-              child: Row(
-                children: [
-                  const Icon(Icons.person_outline, size: 20),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        authController.currentUser?.name ?? 'User',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Text(
-                        authController.currentUser?.email ?? '',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'logout',
-              child: Row(
-                children: [
-                  Icon(Icons.logout, size: 20, color: AppTheme.errorColor),
-                  const SizedBox(width: 12),
-                  Text(
-                    AppStrings.logout,
-                    style: TextStyle(color: AppTheme.errorColor),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          onSelected: (value) {
-            if (value == 'logout') {
-              _handleLogout();
-            }
-          },
-        ),
-        const SizedBox(width: 8),
-      ],
-    );
-  }
-
-  Widget _buildSearchAndFilter(BuildContext context, bool isOfficial) {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (value) {
-                    context.read<DashboardController>().setSearchQuery(value);
-                  },
-                  decoration: InputDecoration(
-                    hintText: 'Search proposals...',
-                    prefixIcon: const Icon(Icons.search, color: AppTheme.textSecondary),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 20),
-                            onPressed: () {
-                              _searchController.clear();
-                              context.read<DashboardController>().setSearchQuery('');
-                            },
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: AppTheme.backgroundColor,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-              ),
-              if (isOfficial) ...[  
-                const SizedBox(width: 12),
-                Container(
-                  decoration: BoxDecoration(
-                    color: _showFilters ? AppTheme.primaryColor : AppTheme.backgroundColor,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: IconButton(
-                    icon: Icon(
-                      Icons.tune,
-                      color: _showFilters ? Colors.white : AppTheme.textSecondary,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _showFilters = !_showFilters;
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ],
-          ),
-          if (_showFilters && isOfficial) ...[  
-            const SizedBox(height: 16),
-            _buildFilterSection(context),
-          ],
-        ],
-      ),
-    ).animate().fadeIn(duration: 300.ms);
-  }
-
-  Widget _buildFilterSection(BuildContext context) {
-    return Consumer<DashboardController>(
-      builder: (context, controller, child) {
-        return Row(
+  Widget _buildProposalList(List<ProposalModel> proposalList) {
+    if (proposalList.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: AppTheme.backgroundColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<ProposalStatus?>(
-                    value: controller.statusFilter,
-                    isExpanded: true,
-                    hint: const Text('Status'),
-                    items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('All Status'),
-                      ),
-                      ...ProposalStatus.values.map((status) {
-                        return DropdownMenuItem(
-                          value: status,
-                          child: Text(status.displayName),
-                        );
-                      }),
-                    ],
-                    onChanged: (value) {
-                      controller.setStatusFilter(value);
-                    },
-                  ),
-                ),
-              ),
+            Icon(
+              Icons.inbox_outlined,
+              size: 80,
+              color: AppColors.textLight,
             ),
-            const SizedBox(width: 12),
-            TextButton.icon(
-              onPressed: () {
-                controller.clearFilters();
-                _searchController.clear();
-              },
-              icon: const Icon(Icons.clear_all, size: 20),
-              label: const Text('Clear'),
+            const SizedBox(height: 16),
+            Text(
+              'No proposals found',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Proposals will appear here',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textLight,
+                  ),
             ),
           ],
-        );
-      },
-    );
-  }
+        ),
+      );
+    }
 
-  Widget _buildTabs(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      child: TabBar(
-        controller: _tabController,
-        labelColor: AppTheme.primaryColor,
-        unselectedLabelColor: AppTheme.textSecondary,
-        indicatorColor: AppTheme.primaryColor,
-        indicatorWeight: 3,
-        tabs: const [
-          Tab(text: 'All Proposals'),
-          Tab(text: 'Pending Review'),
-        ],
-        onTap: (index) {
-          final controller = context.read<DashboardController>();
-          if (index == 1) {
-            controller.setStatusFilter(ProposalStatus.pending);
-          } else {
-            controller.setStatusFilter(null);
-          }
+    return RefreshIndicator(
+      onRefresh: () async {
+        context.read<ProposalProvider>().loadProposals();
+      },
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: proposalList.length,
+        itemBuilder: (context, index) {
+          final proposal = proposalList[index];
+          return ProposalCard(
+            proposal: proposal,
+            onTap: () {
+              Navigator.pushNamed(
+                context,
+                AppRoutes.proposalDetail,
+                arguments: proposal,
+              );
+            },
+          );
         },
       ),
-    );
-  }
-
-  Widget _buildProposalsList(BuildContext context, bool isOfficial) {
-    return Consumer<DashboardController>(
-      builder: (context, controller, child) {
-        if (controller.isLoading) {
-          return const LoadingIndicator(message: 'Loading proposals...');
-        }
-
-        if (controller.filteredProposals.isEmpty) {
-          return EmptyState(
-            icon: Icons.description_outlined,
-            title: 'No Proposals Found',
-            subtitle: controller.searchQuery.isNotEmpty || controller.statusFilter != null
-                ? 'Try adjusting your search or filters'
-                : isOfficial
-                    ? 'No proposals have been submitted yet'
-                    : 'Start by submitting your first proposal',
-            action: !isOfficial && controller.searchQuery.isEmpty && controller.statusFilter == null
-                ? ElevatedButton.icon(
-                    onPressed: () => context.push(AppRoutes.proposalSubmission),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Submit Proposal'),
-                  )
-                : null,
-          );
-        }
-
-        return RefreshIndicator(
-          onRefresh: () async {
-            await controller.loadProposals(
-              userId: context.read<AuthController>().currentUser?.id,
-              isOfficial: isOfficial,
-            );
-          },
-          color: AppTheme.primaryColor,
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: controller.filteredProposals.length,
-            itemBuilder: (context, index) {
-              final proposal = controller.filteredProposals[index];
-              return ProposalCard(
-                proposal: proposal,
-                showStartupName: isOfficial,
-                onTap: () {
-                  context.push('${AppRoutes.proposalDetail}/${proposal.id}');
-                },
-              ).animate().fadeIn(delay: Duration(milliseconds: 100 * index)).slideX(begin: 0.1, end: 0);
-            },
-          ),
-        );
-      },
     );
   }
 }

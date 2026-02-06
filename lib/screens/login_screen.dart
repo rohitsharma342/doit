@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../app/routes.dart';
-import '../config/theme.dart';
-import '../controllers/auth_controller.dart';
-import '../utils/constants.dart';
-import '../utils/validators.dart';
+import '../config/app_colors.dart';
+import '../config/app_routes.dart';
+import '../providers/auth_provider.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_text_field.dart';
 
@@ -29,41 +25,51 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  String? _validateEmail(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your email';
+    }
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(value)) {
+      return 'Please enter a valid email';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your password';
+    }
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+    return null;
+  }
+
   Future<void> _handleLogin() async {
-    if (_formKey.currentState?.validate() ?? false) {
-      final authController = context.read<AuthController>();
-      final success = await authController.login(
+    if (_formKey.currentState!.validate()) {
+      final authProvider = context.read<AuthProvider>();
+      final success = await authProvider.login(
         _emailController.text.trim(),
         _passwordController.text,
       );
 
       if (success && mounted) {
-        context.go(AppRoutes.dashboard);
+        Navigator.pushReplacementNamed(context, AppRoutes.dashboard);
       }
     }
-  }
-
-  void _handleQuickLogin(bool isOfficial) {
-    final authController = context.read<AuthController>();
-    if (isOfficial) {
-      authController.loginAsOfficial();
-    } else {
-      authController.loginAsStartup();
-    }
-    context.go(AppRoutes.dashboard);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Form(
             key: _formKey,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 40),
                 Center(
@@ -71,178 +77,188 @@ class _LoginScreenState extends State<LoginScreen> {
                     width: 80,
                     height: 80,
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryColor,
+                      color: AppColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Icon(
                       Icons.rocket_launch_rounded,
                       size: 40,
-                      color: Colors.white,
+                      color: AppColors.primary,
                     ),
                   ),
-                ).animate().fadeIn(duration: 500.ms).scale(),
-                const SizedBox(height: 32),
-                Center(
-                  child: Text(
-                    'Welcome Back',
-                    style: Theme.of(context).textTheme.headlineLarge,
-                  ),
-                ).animate().fadeIn(delay: 200.ms, duration: 500.ms),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Welcome Back',
+                  style: Theme.of(context).textTheme.headlineLarge,
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    'Sign in to continue to ${AppConstants.appName}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppTheme.textSecondary,
-                        ),
-                    textAlign: TextAlign.center,
-                  ),
-                ).animate().fadeIn(delay: 300.ms, duration: 500.ms),
+                Text(
+                  'Sign in to continue to DOIT',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 48),
-                Consumer<AuthController>(
-                  builder: (context, authController, child) {
-                    if (authController.errorMessage != null) {
+                Consumer<AuthProvider>(
+                  builder: (context, auth, _) {
+                    if (auth.errorMessage != null) {
                       return Container(
-                        padding: const EdgeInsets.all(16),
-                        margin: const EdgeInsets.only(bottom: 24),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppTheme.errorColor.withOpacity(0.1),
+                          color: AppColors.error.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: AppTheme.errorColor.withOpacity(0.3),
+                            color: AppColors.error.withOpacity(0.3),
                           ),
                         ),
                         child: Row(
                           children: [
                             const Icon(
                               Icons.error_outline,
-                              color: AppTheme.errorColor,
+                              color: AppColors.error,
+                              size: 20,
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                authController.errorMessage!,
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: AppTheme.errorColor,
-                                    ),
+                                auth.errorMessage!,
+                                style: const TextStyle(
+                                  color: AppColors.error,
+                                  fontSize: 14,
+                                ),
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.close, size: 20),
-                              onPressed: () => authController.clearError(),
-                              color: AppTheme.errorColor,
+                              icon: const Icon(
+                                Icons.close,
+                                color: AppColors.error,
+                                size: 18,
+                              ),
+                              onPressed: () => auth.clearError(),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
                             ),
                           ],
                         ),
-                      ).animate().fadeIn().shake();
+                      );
                     }
                     return const SizedBox.shrink();
                   },
                 ),
                 CustomTextField(
-                  label: AppStrings.email,
+                  label: 'Email',
                   hint: 'Enter your email',
                   controller: _emailController,
+                  validator: _validateEmail,
                   keyboardType: TextInputType.emailAddress,
-                  prefixIcon: Icons.email_outlined,
-                  validator: Validators.validateEmail,
+                  prefixIcon: const Icon(Icons.email_outlined),
                   textInputAction: TextInputAction.next,
-                ).animate().fadeIn(delay: 400.ms, duration: 500.ms).slideX(begin: -0.1, end: 0),
+                ),
                 const SizedBox(height: 20),
                 CustomTextField(
-                  label: AppStrings.password,
+                  label: 'Password',
                   hint: 'Enter your password',
                   controller: _passwordController,
+                  validator: _validatePassword,
                   obscureText: true,
-                  prefixIcon: Icons.lock_outlined,
-                  validator: Validators.validatePassword,
+                  prefixIcon: const Icon(Icons.lock_outlined),
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _handleLogin(),
-                ).animate().fadeIn(delay: 500.ms, duration: 500.ms).slideX(begin: -0.1, end: 0),
+                ),
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Password reset functionality coming soon'),
+                        ),
+                      );
+                    },
                     child: Text(
-                      AppStrings.forgotPassword,
+                      'Forgot Password?',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppTheme.primaryColor,
-                            fontWeight: FontWeight.w500,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
                           ),
                     ),
                   ),
-                ).animate().fadeIn(delay: 600.ms, duration: 500.ms),
+                ),
                 const SizedBox(height: 24),
-                Consumer<AuthController>(
-                  builder: (context, authController, child) {
+                Consumer<AuthProvider>(
+                  builder: (context, auth, _) {
                     return CustomButton(
-                      text: AppStrings.login,
+                      text: 'Sign In',
                       onPressed: _handleLogin,
-                      isLoading: authController.isLoading,
+                      isLoading: auth.isLoading,
                     );
                   },
-                ).animate().fadeIn(delay: 700.ms, duration: 500.ms).slideY(begin: 0.2, end: 0),
+                ),
                 const SizedBox(height: 24),
-                Row(
-                  children: [
-                    const Expanded(child: Divider()),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'Quick Access',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppTheme.textSecondary,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Demo Credentials',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: AppColors.primary,
                             ),
                       ),
-                    ),
-                    const Expanded(child: Divider()),
-                  ],
-                ).animate().fadeIn(delay: 800.ms, duration: 500.ms),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: CustomButton(
-                        text: 'Startup',
-                        onPressed: () => _handleQuickLogin(false),
-                        type: ButtonType.outline,
-                        icon: Icons.business_outlined,
+                      const SizedBox(height: 8),
+                      Text(
+                        'Startup: startup@techvision.com',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: CustomButton(
-                        text: 'Official',
-                        onPressed: () => _handleQuickLogin(true),
-                        type: ButtonType.outline,
-                        icon: Icons.admin_panel_settings_outlined,
+                      Text(
+                        'Official: official@doit.raj.gov.in',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
-                    ),
-                  ],
-                ).animate().fadeIn(delay: 900.ms, duration: 500.ms),
+                      Text(
+                        'Password: any 6+ characters',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 32),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      AppStrings.dontHaveAccount,
+                      "Don't have an account? ",
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppTheme.textSecondary,
+                            color: AppColors.textSecondary,
                           ),
                     ),
                     TextButton(
-                      onPressed: () => context.push(AppRoutes.register),
+                      onPressed: () {
+                        Navigator.pushNamed(context, AppRoutes.register);
+                      },
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       child: Text(
-                        AppStrings.signUp,
+                        'Register',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: AppTheme.primaryColor,
+                              color: AppColors.primary,
                               fontWeight: FontWeight.w600,
                             ),
                       ),
                     ),
                   ],
-                ).animate().fadeIn(delay: 1000.ms, duration: 500.ms),
+                ),
               ],
             ),
           ),

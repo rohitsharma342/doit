@@ -1,35 +1,33 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../config/theme.dart';
-import '../controllers/auth_controller.dart';
-import '../controllers/dashboard_controller.dart';
-import '../controllers/proposal_controller.dart';
+import '../config/app_colors.dart';
 import '../models/proposal_model.dart';
-import '../utils/constants.dart';
+import '../providers/auth_provider.dart';
+import '../providers/proposal_provider.dart';
+import '../providers/notification_provider.dart';
+import '../widgets/status_badge.dart';
 import '../widgets/custom_button.dart';
-import '../widgets/loading_indicator.dart';
+import '../widgets/custom_text_field.dart';
 
 class ProposalDetailScreen extends StatefulWidget {
-  final String proposalId;
+  final ProposalModel proposal;
 
-  const ProposalDetailScreen({super.key, required this.proposalId});
+  const ProposalDetailScreen({super.key, required this.proposal});
 
   @override
   State<ProposalDetailScreen> createState() => _ProposalDetailScreenState();
 }
 
 class _ProposalDetailScreenState extends State<ProposalDetailScreen> {
+  late ProposalModel _proposal;
   final _commentController = TextEditingController();
+  bool _isUpdating = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ProposalController>().loadProposal(widget.proposalId);
-    });
+    _proposal = widget.proposal;
   }
 
   @override
@@ -38,368 +36,463 @@ class _ProposalDetailScreenState extends State<ProposalDetailScreen> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final isOfficial = context.watch<AuthController>().isOfficial;
+  void _showStatusUpdateDialog() {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isOfficial) return;
 
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(
-        title: const Text(AppStrings.proposalDetails),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: Consumer<ProposalController>(
-        builder: (context, controller, child) {
-          if (controller.isLoading) {
-            return const LoadingIndicator(message: 'Loading proposal...');
-          }
+    ProposalStatus? selectedStatus = _proposal.status;
 
-          if (controller.errorMessage != null) {
-            return EmptyState(
-              icon: Icons.error_outline,
-              title: 'Error',
-              subtitle: controller.errorMessage,
-              action: CustomButton(
-                text: AppStrings.retry,
-                onPressed: () => controller.loadProposal(widget.proposalId),
-                isFullWidth: false,
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-            );
-          }
-
-          final proposal = controller.selectedProposal;
-          if (proposal == null) {
-            return const EmptyState(
-              icon: Icons.description_outlined,
-              title: 'Proposal Not Found',
-              subtitle: 'The requested proposal could not be found.',
-            );
-          }
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(context, proposal),
-                const SizedBox(height: 16),
-                _buildDetailsCard(context, proposal),
-                const SizedBox(height: 16),
-                _buildContactCard(context, proposal),
-                if (proposal.attachments.isNotEmpty) ...[  
+              title: const Text('Update Status'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Select new status:',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
                   const SizedBox(height: 16),
-                  _buildAttachmentsCard(context, proposal),
-                ],
-                if (isOfficial) ...[  
+                  ...ProposalStatus.values.map((status) {
+                    return RadioListTile<ProposalStatus>(
+                      title: Text(_getStatusLabel(status)),
+                      value: status,
+                      groupValue: selectedStatus,
+                      activeColor: AppColors.primary,
+                      onChanged: (value) {
+                        setDialogState(() => selectedStatus = value);
+                      },
+                      contentPadding: EdgeInsets.zero,
+                    );
+                  }),
                   const SizedBox(height: 16),
-                  _buildStatusUpdateCard(context, proposal),
+                  CustomTextField(
+                    hint: 'Add a comment (optional)',
+                    controller: _commentController,
+                    maxLines: 3,
+                  ),
                 ],
-                if (proposal.comments.isNotEmpty) ...[  
-                  const SizedBox(height: 16),
-                  _buildCommentsCard(context, proposal),
-                ],
-                const SizedBox(height: 32),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: selectedStatus != _proposal.status
+                      ? () async {
+                          Navigator.pop(context);
+                          await _updateStatus(selectedStatus!);
+                        }
+                      : null,
+                  child: const Text('Update'),
+                ),
               ],
-            ),
-          );
-        },
-      ),
+            );
+          },
+        );
+      },
     );
   }
 
-  Widget _buildHeader(BuildContext context, ProposalModel proposal) {
-    final statusColor = Color(int.parse(proposal.status.colorHex.replaceFirst('#', '0xFF')));
+  String _getStatusLabel(ProposalStatus status) {
+    switch (status) {
+      case ProposalStatus.pending:
+        return 'Pending';
+      case ProposalStatus.reviewing:
+        return 'Under Review';
+      case ProposalStatus.approved:
+        return 'Approved';
+      case ProposalStatus.rejected:
+        return 'Rejected';
+    }
+  }
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    proposal.title,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: statusColor.withOpacity(0.3)),
-                  ),
-                  child: Text(
-                    proposal.status.displayName,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: statusColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ),
-              ],
+  Future<void> _updateStatus(ProposalStatus newStatus) async {
+    setState(() => _isUpdating = true);
+
+    final auth = context.read<AuthProvider>();
+    final proposals = context.read<ProposalProvider>();
+    final notifications = context.read<NotificationProvider>();
+
+    final success = await proposals.updateProposalStatus(
+      _proposal.id,
+      newStatus,
+      comment: _commentController.text.trim().isNotEmpty
+          ? _commentController.text.trim()
+          : null,
+      userId: auth.currentUser?.id,
+      userName: auth.currentUser?.name,
+    );
+
+    setState(() => _isUpdating = false);
+
+    if (success) {
+      final updatedProposal = proposals.getProposalById(_proposal.id);
+      if (updatedProposal != null) {
+        setState(() => _proposal = updatedProposal);
+      }
+
+      notifications.addNotification(
+        title: 'Status Updated',
+        description:
+            'Proposal "${_proposal.title}" status changed to ${_getStatusLabel(newStatus)}',
+        proposalId: _proposal.id,
+      );
+
+      _commentController.clear();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Status updated successfully'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text('Proposal Details'),
+        actions: [
+          if (auth.isOfficial)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: _isUpdating ? null : _showStatusUpdateDialog,
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.business,
-                    color: AppTheme.primaryColor,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
+        ],
+      ),
+      body: _isUpdating
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        proposal.startupName,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                      Expanded(
+                        child: Text(
+                          _proposal.title,
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
                       ),
-                      Text(
-                        'Submitted on ${DateFormat('MMMM dd, yyyy').format(proposal.submittedAt)}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppTheme.textSecondary,
-                            ),
-                      ),
+                      const SizedBox(width: 16),
+                      StatusBadge(status: _proposal.status, isLarge: true),
                     ],
                   ),
-                ),
-              ],
-            ),
-            if (proposal.category != null) ...[  
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.category_outlined,
-                      size: 16,
-                      color: AppTheme.primaryColor,
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      proposal.category!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppTheme.primaryColor,
-                            fontWeight: FontWeight.w500,
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: AppColors.primary.withOpacity(0.1),
+                          child: Text(
+                            _proposal.startupName.substring(0, 1).toUpperCase(),
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _proposal.startupName,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                              Text(
+                                _proposal.contactInfo,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: AppColors.textSecondary,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSection(
+                    'Description',
+                    Icons.description_outlined,
+                    child: Text(
+                      _proposal.description,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            height: 1.6,
+                            color: AppColors.textSecondary,
                           ),
                     ),
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSection(
+                    'Timeline',
+                    Icons.schedule_outlined,
+                    child: Column(
+                      children: [
+                        _buildTimelineItem(
+                          'Submitted',
+                          DateFormat('MMMM dd, yyyy • hh:mm a')
+                              .format(_proposal.createdAt),
+                          true,
+                        ),
+                        if (_proposal.createdAt != _proposal.updatedAt)
+                          _buildTimelineItem(
+                            'Last Updated',
+                            DateFormat('MMMM dd, yyyy • hh:mm a')
+                                .format(_proposal.updatedAt),
+                            false,
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (_proposal.attachments.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    _buildSection(
+                      'Attachments',
+                      Icons.attach_file,
+                      child: Column(
+                        children: _proposal.attachments.map((file) {
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.divider),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _getFileIcon(file),
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    file,
+                                    style:
+                                        Theme.of(context).textTheme.bodyMedium,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.download_outlined,
+                                    color: AppColors.primary,
+                                  ),
+                                  onPressed: () {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content:
+                                            Text('Downloading $file...'),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
                   ],
-                ),
+                  if (_proposal.comments.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    _buildSection(
+                      'Comments',
+                      Icons.comment_outlined,
+                      child: Column(
+                        children: _proposal.comments.map((comment) {
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.divider),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor:
+                                          AppColors.primary.withOpacity(0.1),
+                                      child: Text(
+                                        comment.userName
+                                            .substring(0, 1)
+                                            .toUpperCase(),
+                                        style: const TextStyle(
+                                          color: AppColors.primary,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            comment.userName,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelLarge,
+                                          ),
+                                          Text(
+                                            DateFormat('MMM dd, yyyy')
+                                                .format(comment.createdAt),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: AppColors.textLight,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  comment.content,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: AppColors.textSecondary,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 32),
+                  if (auth.isOfficial) ...[
+                    CustomButton(
+                      text: 'Update Status',
+                      onPressed: _showStatusUpdateDialog,
+                      icon: Icons.edit_outlined,
+                      width: double.infinity,
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ],
               ),
-            ],
-          ],
-        ),
-      ),
-    ).animate().fadeIn(duration: 400.ms);
+            ),
+    );
   }
 
-  Widget _buildDetailsCard(BuildContext context, ProposalModel proposal) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.description_outlined,
-                  color: AppTheme.primaryColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Description',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              proposal.description,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppTheme.textSecondary,
-                    height: 1.6,
-                  ),
-            ),
-          ],
-        ),
-      ),
-    ).animate().fadeIn(delay: 100.ms, duration: 400.ms);
-  }
-
-  Widget _buildContactCard(BuildContext context, ProposalModel proposal) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.contact_mail_outlined,
-                  color: AppTheme.primaryColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Contact Information',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _buildContactRow(
-              context,
-              Icons.email_outlined,
-              'Email',
-              proposal.contactEmail,
-            ),
-            const SizedBox(height: 12),
-            _buildContactRow(
-              context,
-              Icons.phone_outlined,
-              'Phone',
-              proposal.contactPhone,
-            ),
-          ],
-        ),
-      ),
-    ).animate().fadeIn(delay: 200.ms, duration: 400.ms);
-  }
-
-  Widget _buildContactRow(BuildContext context, IconData icon, String label, String value) {
-    return Row(
+  Widget _buildSection(String title, IconData icon, {required Widget child}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: AppTheme.backgroundColor,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, size: 18, color: AppTheme.textSecondary),
-        ),
-        const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        Row(
           children: [
+            Icon(icon, size: 20, color: AppColors.primary),
+            const SizedBox(width: 8),
             Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppTheme.textSecondary,
-                  ),
-            ),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        child,
       ],
     );
   }
 
-  Widget _buildAttachmentsCard(BuildContext context, ProposalModel proposal) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildTimelineItem(String label, String value, bool isFirst) {
+    return Row(
+      children: [
+        Column(
           children: [
-            Row(
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: isFirst ? AppColors.primary : AppColors.textLight,
+                shape: BoxShape.circle,
+              ),
+            ),
+            if (!isFirst)
+              Container(
+                width: 2,
+                height: 24,
+                color: AppColors.divider,
+              ),
+          ],
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.attach_file,
-                  color: AppTheme.primaryColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
                 Text(
-                  'Attachments (${proposal.attachments.length})',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                  label,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary,
                       ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            ...proposal.attachments.map((attachment) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppTheme.backgroundColor,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _getFileIcon(attachment),
-                      color: AppTheme.primaryColor,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        attachment,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.download_outlined, size: 20),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Downloading $attachment...'),
-                            backgroundColor: AppTheme.primaryColor,
-                          ),
-                        );
-                      },
-                      color: AppTheme.primaryColor,
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ],
+          ),
         ),
-      ),
-    ).animate().fadeIn(delay: 300.ms, duration: 400.ms);
+      ],
+    );
   }
 
   IconData _getFileIcon(String fileName) {
@@ -410,224 +503,18 @@ class _ProposalDetailScreenState extends State<ProposalDetailScreen> {
       case 'doc':
       case 'docx':
         return Icons.description;
-      case 'png':
-      case 'jpg':
-      case 'jpeg':
-        return Icons.image;
+      case 'ppt':
+      case 'pptx':
+        return Icons.slideshow;
+      case 'xls':
+      case 'xlsx':
+        return Icons.table_chart;
       case 'mp4':
+      case 'mov':
+      case 'avi':
         return Icons.video_file;
       default:
         return Icons.insert_drive_file;
     }
-  }
-
-  Widget _buildStatusUpdateCard(BuildContext context, ProposalModel proposal) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.update,
-                  color: AppTheme.primaryColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  AppStrings.updateStatus,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: ProposalStatus.values.map((status) {
-                final isSelected = proposal.status == status;
-                final statusColor = Color(int.parse(status.colorHex.replaceFirst('#', '0xFF')));
-
-                return ChoiceChip(
-                  label: Text(status.displayName),
-                  selected: isSelected,
-                  selectedColor: statusColor.withOpacity(0.2),
-                  backgroundColor: Colors.grey.shade100,
-                  labelStyle: TextStyle(
-                    color: isSelected ? statusColor : AppTheme.textSecondary,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                  onSelected: isSelected
-                      ? null
-                      : (selected) {
-                          if (selected) {
-                            _showStatusUpdateDialog(context, status);
-                          }
-                        },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _commentController,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: 'Add a comment (optional)',
-                filled: true,
-                fillColor: AppTheme.backgroundColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ).animate().fadeIn(delay: 400.ms, duration: 400.ms);
-  }
-
-  void _showStatusUpdateDialog(BuildContext context, ProposalStatus newStatus) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Update Status'),
-        content: Text('Are you sure you want to change the status to "${newStatus.displayName}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(dialogContext);
-              final proposalController = context.read<ProposalController>();
-              final dashboardController = context.read<DashboardController>();
-              final authController = context.read<AuthController>();
-
-              final success = await proposalController.updateProposalStatus(
-                widget.proposalId,
-                newStatus,
-                comment: _commentController.text.isNotEmpty ? _commentController.text : null,
-                authorId: authController.currentUser?.id,
-                authorName: authController.currentUser?.name,
-              );
-
-              if (success) {
-                dashboardController.updateProposalStatus(widget.proposalId, newStatus);
-                _commentController.clear();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text('Status updated successfully!'),
-                      backgroundColor: AppTheme.successColor,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Update'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCommentsCard(BuildContext context, ProposalModel proposal) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.comment_outlined,
-                  color: AppTheme.primaryColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${AppStrings.comments} (${proposal.comments.length})',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ...proposal.comments.map((comment) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.backgroundColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-                          child: Text(
-                            comment.authorName.substring(0, 1).toUpperCase(),
-                            style: const TextStyle(
-                              color: AppTheme.primaryColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                comment.authorName,
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                              Text(
-                                DateFormat('MMM dd, yyyy • hh:mm a').format(comment.createdAt),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: AppTheme.textSecondary,
-                                      fontSize: 11,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      comment.content,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppTheme.textSecondary,
-                          ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    ).animate().fadeIn(delay: 500.ms, duration: 400.ms);
   }
 }

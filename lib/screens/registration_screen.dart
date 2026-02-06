@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../app/routes.dart';
-import '../config/theme.dart';
-import '../controllers/auth_controller.dart';
-import '../utils/constants.dart';
-import '../utils/validators.dart';
+import '../config/app_colors.dart';
+import '../config/app_routes.dart';
+import '../providers/auth_provider.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_text_field.dart';
 
@@ -33,27 +29,62 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     super.dispose();
   }
 
+  String? _validateStartupName(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your startup name';
+    }
+    if (value.length < 2) {
+      return 'Startup name must be at least 2 characters';
+    }
+    return null;
+  }
+
+  String? _validateEmail(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your email';
+    }
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(value)) {
+      return 'Please enter a valid email';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter a password';
+    }
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+    if (!RegExp(r'[A-Za-z]').hasMatch(value) ||
+        !RegExp(r'[0-9]').hasMatch(value)) {
+      return 'Password must contain letters and numbers';
+    }
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please confirm your password';
+    }
+    if (value != _passwordController.text) {
+      return 'Passwords do not match';
+    }
+    return null;
+  }
+
   Future<void> _handleRegister() async {
-    if (_formKey.currentState?.validate() ?? false) {
-      final authController = context.read<AuthController>();
-      final success = await authController.register(
+    if (_formKey.currentState!.validate()) {
+      final authProvider = context.read<AuthProvider>();
+      final success = await authProvider.register(
         startupName: _startupNameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
       if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Registration successful! Welcome to DOIT.'),
-            backgroundColor: AppTheme.successColor,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-        context.go(AppRoutes.dashboard);
+        Navigator.pushReplacementNamed(context, AppRoutes.dashboard);
       }
     }
   }
@@ -61,12 +92,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios),
-          onPressed: () => context.pop(),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SafeArea(
@@ -75,134 +104,151 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           child: Form(
             key: _formKey,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
                   'Create Account',
                   style: Theme.of(context).textTheme.headlineLarge,
-                ).animate().fadeIn(duration: 500.ms),
+                ),
                 const SizedBox(height: 8),
                 Text(
-                  'Register your startup with ${AppConstants.appName}',
+                  'Register your startup with DOIT Rajasthan',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppTheme.textSecondary,
+                        color: AppColors.textSecondary,
                       ),
-                ).animate().fadeIn(delay: 100.ms, duration: 500.ms),
-                const SizedBox(height: 40),
-                Consumer<AuthController>(
-                  builder: (context, authController, child) {
-                    if (authController.errorMessage != null) {
+                ),
+                const SizedBox(height: 32),
+                Consumer<AuthProvider>(
+                  builder: (context, auth, _) {
+                    if (auth.errorMessage != null) {
                       return Container(
-                        padding: const EdgeInsets.all(16),
-                        margin: const EdgeInsets.only(bottom: 24),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppTheme.errorColor.withOpacity(0.1),
+                          color: AppColors.error.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: AppTheme.errorColor.withOpacity(0.3),
+                            color: AppColors.error.withOpacity(0.3),
                           ),
                         ),
                         child: Row(
                           children: [
                             const Icon(
                               Icons.error_outline,
-                              color: AppTheme.errorColor,
+                              color: AppColors.error,
+                              size: 20,
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                authController.errorMessage!,
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: AppTheme.errorColor,
-                                    ),
+                                auth.errorMessage!,
+                                style: const TextStyle(
+                                  color: AppColors.error,
+                                  fontSize: 14,
+                                ),
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.close, size: 20),
-                              onPressed: () => authController.clearError(),
-                              color: AppTheme.errorColor,
+                              icon: const Icon(
+                                Icons.close,
+                                color: AppColors.error,
+                                size: 18,
+                              ),
+                              onPressed: () => auth.clearError(),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
                             ),
                           ],
                         ),
-                      ).animate().fadeIn().shake();
+                      );
                     }
                     return const SizedBox.shrink();
                   },
                 ),
                 CustomTextField(
-                  label: AppStrings.startupName,
+                  label: 'Startup Name',
                   hint: 'Enter your startup name',
                   controller: _startupNameController,
-                  prefixIcon: Icons.business_outlined,
-                  validator: (value) => Validators.validateRequired(value, 'Startup name'),
+                  validator: _validateStartupName,
+                  prefixIcon: const Icon(Icons.business_outlined),
                   textInputAction: TextInputAction.next,
-                ).animate().fadeIn(delay: 200.ms, duration: 500.ms).slideX(begin: -0.1, end: 0),
+                ),
                 const SizedBox(height: 20),
                 CustomTextField(
-                  label: AppStrings.email,
+                  label: 'Email',
                   hint: 'Enter your email',
                   controller: _emailController,
+                  validator: _validateEmail,
                   keyboardType: TextInputType.emailAddress,
-                  prefixIcon: Icons.email_outlined,
-                  validator: Validators.validateEmail,
+                  prefixIcon: const Icon(Icons.email_outlined),
                   textInputAction: TextInputAction.next,
-                ).animate().fadeIn(delay: 300.ms, duration: 500.ms).slideX(begin: -0.1, end: 0),
+                ),
                 const SizedBox(height: 20),
                 CustomTextField(
-                  label: AppStrings.password,
+                  label: 'Password',
                   hint: 'Create a password',
                   controller: _passwordController,
+                  validator: _validatePassword,
                   obscureText: true,
-                  prefixIcon: Icons.lock_outlined,
-                  validator: Validators.validatePassword,
+                  prefixIcon: const Icon(Icons.lock_outlined),
                   textInputAction: TextInputAction.next,
-                ).animate().fadeIn(delay: 400.ms, duration: 500.ms).slideX(begin: -0.1, end: 0),
+                ),
                 const SizedBox(height: 20),
                 CustomTextField(
-                  label: AppStrings.confirmPassword,
+                  label: 'Confirm Password',
                   hint: 'Confirm your password',
                   controller: _confirmPasswordController,
+                  validator: _validateConfirmPassword,
                   obscureText: true,
-                  prefixIcon: Icons.lock_outlined,
-                  validator: (value) => Validators.validateConfirmPassword(
-                    value,
-                    _passwordController.text,
-                  ),
+                  prefixIcon: const Icon(Icons.lock_outlined),
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _handleRegister(),
-                ).animate().fadeIn(delay: 500.ms, duration: 500.ms).slideX(begin: -0.1, end: 0),
+                ),
                 const SizedBox(height: 32),
-                Consumer<AuthController>(
-                  builder: (context, authController, child) {
+                Consumer<AuthProvider>(
+                  builder: (context, auth, _) {
                     return CustomButton(
-                      text: AppStrings.register,
+                      text: 'Create Account',
                       onPressed: _handleRegister,
-                      isLoading: authController.isLoading,
+                      isLoading: auth.isLoading,
                     );
                   },
-                ).animate().fadeIn(delay: 600.ms, duration: 500.ms).slideY(begin: 0.2, end: 0),
+                ),
                 const SizedBox(height: 24),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      AppStrings.alreadyHaveAccount,
+                      'Already have an account? ',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppTheme.textSecondary,
+                            color: AppColors.textSecondary,
                           ),
                     ),
                     TextButton(
-                      onPressed: () => context.pop(),
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       child: Text(
-                        AppStrings.signIn,
+                        'Sign In',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: AppTheme.primaryColor,
+                              color: AppColors.primary,
                               fontWeight: FontWeight.w600,
                             ),
                       ),
                     ),
                   ],
-                ).animate().fadeIn(delay: 700.ms, duration: 500.ms),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'By creating an account, you agree to our Terms of Service and Privacy Policy',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textLight,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
               ],
             ),
           ),
